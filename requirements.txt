@@ -1,0 +1,6 @@
+# Rogue Sniper AI - Python dependencies (Python 3.11+)
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+numpy>=1.26
+opencv-python-headless>=4.9   # used from Phase 2 (highlight detection); checked by env-check now

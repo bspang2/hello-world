@@ -1,0 +1,101 @@
+"""Background monitor thread so the API/UI stays responsive during scans and imports."""
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from datetime import datetime, timezone
+
+from .config import Settings, ensure_workspace
+from .db import Database
+from .importer import Importer
+from .watcher import FolderWatcher, ScanReport
+
+log = logging.getLogger(__name__)
+
+
+class MonitorService:
+    def __init__(self, settings: Settings, db: Database, **watcher_kwargs):
+        self.db = db
+        self._scan_lock = threading.Lock()
+        self._stop = threading.Event()
+        self._wake = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.last_scan_at: str | None = None
+        self.last_error: str | None = None
+        self.last_report: ScanReport | None = None
+        self._watcher_kwargs = watcher_kwargs
+        self.apply_settings(settings)
+
+    def apply_settings(self, settings: Settings) -> None:
+        with self._scan_lock:
+            old = getattr(self, "watcher", None)
+            self.settings = settings
+            ensure_workspace(settings)
+            self.importer = Importer(settings, db=self.db)
+            self.watcher = FolderWatcher(settings, self.db, self.importer, **self._watcher_kwargs)
+            if old is not None:
+                self.watcher._tracked = old._tracked  # keep stability timers across setting changes
+
+    def scan_once(self) -> ScanReport:
+        with self._scan_lock:
+            try:
+                rep = self.watcher.scan()
+                self.last_report, self.last_error = rep, None
+                return rep
+            except Exception as e:  # keep the loop alive; surface error in status
+                log.exception("scan failed")
+                self.last_error = str(e)
+                self.db.add_event(f"Scan error: {e}", level="error")
+                raise
+            finally:
+                self.last_scan_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    def request_scan(self) -> None:
+        self._wake.set()
+
+    # ---- thread lifecycle ---------------------------------------------
+    @property
+    def running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def start(self) -> None:
+        if self.running:
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="rogue-monitor", daemon=True)
+        self._thread.start()
+        self.db.add_event("Folder monitor started: " + ", ".join(str(p) for p in self.settings.monitored_folders()))
+
+    def stop(self, timeout: float = 10) -> None:
+        self._stop.set()
+        self._wake.set()
+        if self._thread:
+            self._thread.join(timeout)
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.scan_once()
+            except Exception:
+                pass
+            self._wake.wait(self.settings.poll_interval_seconds)
+            self._wake.clear()
+
+    def status(self) -> dict:
+        return {
+            "running": self.running,
+            "last_scan_at": self.last_scan_at,
+            "last_error": self.last_error,
+            "pending_files": self.watcher.pending_count,
+            "monitored_folders": [str(p) for p in self.settings.monitored_folders()],
+        }
+
+
+def run_forever(service: MonitorService) -> None:
+    service.start()
+    try:
+        while service.running:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        service.stop()

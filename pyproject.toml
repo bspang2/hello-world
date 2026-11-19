@@ -1,0 +1,9 @@
+[project]
+name = "rogue-sniper-ai"
+version = "0.1.0"
+description = "Autonomous Fortnite content studio: recordings in, TikTok-ready videos out."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
