@@ -30,8 +30,8 @@ them and upload to TikTok yourself.
    - creates `Videos\ROGUE SNIPER\` with `RAW GAMEPLAY`, `PROCESSING`, `READY TO POST`, `ARCHIVE`, `FAILED`
    - finds your ShadowPlay (`Videos\Fortnite`) and OBS recording folders and adds them to the monitor
    - runs the environment check, which test-encodes with every GPU encoder
-4. Double-click **`scripts\windows\start.bat`**.
-5. To update later, close `start.bat` and double-click **`scripts\windows\update.bat`**. It starts the monitor and the API and opens http://127.0.0.1:8765.
+4. Double-click **`scripts\windows\start.bat`**. It starts the monitor and the API and opens http://127.0.0.1:8765.
+5. To update later, close `start.bat` and double-click **`scripts\windows\update.bat`**.
 
 ## Commands
 
