@@ -53,6 +53,26 @@ class Settings(BaseModel):
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
 
+    # ---- Phase 2: highlight detection ---------------------------------
+    auto_analyze: bool = True
+    analysis_fps: float = Field(default=4.0, ge=1.0, le=15.0)       # frames sampled per second
+    analysis_width: int = Field(default=640, ge=320, le=1920)       # analysis frame width (px)
+    analysis_hwaccel: Literal["auto", "none", "cuda", "d3d11va", "dxva2", "qsv"] = "auto"
+    sensitivity: Literal["low", "medium", "high"] = "medium"
+    # Optional per-type confidence thresholds, e.g. {"high_action_combat": 0.6}
+    type_thresholds: dict[str, float] = Field(default_factory=dict)
+    max_highlights_per_recording: int = Field(default=15, ge=1, le=100)
+    max_clip_seconds: float = Field(default=45.0, ge=5, le=180)
+    scope_threshold: float = Field(default=0.5, ge=0.05, le=1.0)
+    combat_min_shots: dict[str, int] = Field(default_factory=lambda: {"low": 8, "medium": 6, "high": 4})
+
+    # ---- Phase 2: optional cloud AI review (Claude) --------------------
+    ai_enabled: bool = False
+    ai_model: str = "claude-opus-5-5"
+    ai_effort: Literal["low", "medium", "high"] = "low"
+    ai_max_candidates: int = Field(default=8, ge=1, le=40)          # cost guard per recording
+    ai_frames_per_candidate: int = Field(default=6, ge=2, le=12)
+
     @field_validator("extensions")
     @classmethod
     def _norm_ext(cls, v: list[str]) -> list[str]:

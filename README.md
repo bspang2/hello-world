@@ -9,8 +9,8 @@ them and upload to TikTok yourself.
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Environment check, folder monitoring, safe import, SQLite tracking, API | **Done and tested** (26 automated tests) |
-| 2 | Highlight detection (audio + OpenCV + optional multimodal AI), confidence, manual correction | Not started |
+| 1 | Environment check, folder monitoring, safe import, SQLite tracking, API | **Done and tested**, verified on Windows with a real NVIDIA App recording |
+| 2 | Highlight detection (audio + OpenCV + HUD templates + optional Claude review), confidence, manual correction, background jobs | **Done and tested on synthetic footage** (55 tests total). Needs tuning on your real recordings |
 | 3 | FFmpeg rendering: 9:16, zooms, hooks, text, loudness, 3 presets, NVENC/AMF/QSV/x264 | Not started |
 | 4 | Hooks, titles, captions, hashtags, cover, posting window | Not started |
 | 5 | React dashboard + per-video export folders | Not started (Phase 1 ships a basic status page) |
@@ -71,10 +71,63 @@ A recording is imported only when all of these are true:
 - **ShadowPlay / NVIDIA App:** by default it saves to `Videos\Fortnite`. Both Instant Replay (`.DVR.mp4`) and full recordings are picked up.
 - Record at 1080p60 or higher. Phase 3 crops to 9:16, so higher source resolution means sharper vertical videos.
 
-## API (Phase 1)
+## Highlight detection (Phase 2)
+
+Every imported recording is analysed automatically in the background. You can watch progress on the status page.
+
+| Signal | How it's detected | Reliability |
+|---|---|---|
+| **Heavy combat** | Clusters of sharp sounds (gunshots, hits) per 5 s, plus on-screen motion | Generic: the number of shots that counts as combat needs tuning on your audio |
+| **Sniper shot** | Sniper-scope view (black surround with a round lens) followed by a shot sound | Good on synthetic footage; **check it on your snipes** |
+| **Elimination / knock / Victory Royale** | **HUD templates**: a crop of that on-screen message taken from *your own* footage | Very reliable once a template exists. Without templates, none are claimed |
+| **Multi elimination** | 2 or more eliminations within 20 s | Same as eliminations |
+| **Clutch / funny fail / unusual** | Only the optional Claude review can label these | Needs an API key |
+
+Each highlight gets a **confidence** (0-1) and a status:
+- `selected`: above the threshold for your sensitivity setting
+- `below_threshold`: kept, so you can promote it
+- `approved` / `rejected`: your manual decision
+
+Re-running analysis never overwrites what you edited or added by hand.
+
+### Teach it your elimination pop-up (recommended, takes 2 minutes)
+1. Find a moment in a recording where `ELIMINATED <name>` is on screen, for example at 3:20 in recording #1.
+2. Save that frame: `python -m rogue_sniper snapshot 1 --time 3:20`
+3. Open the PNG in **Paint**. Hover over the top-left and bottom-right corners of the message; Paint shows the x, y position in its bottom-left corner.
+4. Create the template: `python -m rogue_sniper make-template 1 --time 3:20 --region 820,700,1100,760 --event elimination`
+5. Re-run analysis: `python -m rogue_sniper analyze 1`
+
+You can do the same with `--event victory_royale` and `--event knocked`.
+
+### Optional Claude review
+`python -m rogue_sniper set-api-key` stores your Anthropic API key in **Windows Credential Manager** and turns on the review. The key is never written to disk in plain text and never returned by the API.
+- **What's sent:** for the top candidates (8 by default), a few downscaled frames each plus the local signals. Your full recording is never uploaded.
+- **What it does:** Claude labels clutch moments and funny fails, writes descriptions, and adjusts confidence. A clear "not a highlight" pushes a clip below the threshold.
+- **Model:** `claude-opus-5-5` at low effort, with automatic refusal fallback enabled.
+- **Cost:** roughly 6 images x 8 clips per recording, about $0.10 per recording at current prices.
+- **Without a key:** everything else still works.
+
+### Commands
+```
+python -m rogue_sniper analyze <id> [--no-ai]       # run now, prints highlights
+python -m rogue_sniper highlights [<id>] [--all]
+python -m rogue_sniper highlight-edit <hid> --status rejected | --type clutch | --start 3:10 --end 3:30
+python -m rogue_sniper highlight-add <id> --start 5:02 --end 5:15 --type funny_failure
+python -m rogue_sniper snapshot <id> --time 3:20
+python -m rogue_sniper make-template <id> --time 3:20 --region x1,y1,x2,y2 --event elimination
+python -m rogue_sniper set-api-key | ai-status
+```
+Settings such as `sensitivity` (low/medium/high), `type_thresholds`, `max_highlights_per_recording`, `analysis_fps` and `ai_max_candidates` live in `settings.json`.
+
+After every analysis, a per-second signal dump is saved to `%LOCALAPPDATA%\RogueSniperAI\analysis\recording_<id>.json`, for tuning.
+
+## API
 
 `GET /api/health` · `GET /api/environment` · `GET /api/stats` · `GET /api/recordings` ·
 `GET /api/recordings/{id}` · `POST /api/recordings/{id}/retry` · `POST /api/scan` ·
-`GET /api/events` · `GET|PUT /api/settings`
+`GET /api/events` · `GET|PUT /api/settings` ·
+`POST /api/recordings/{id}/analyze` · `GET /api/jobs` · `POST /api/jobs/{id}/cancel` ·
+`GET /api/recordings/{id}/highlights` · `GET /api/highlights` · `PATCH|DELETE /api/highlights/{id}` ·
+`POST /api/recordings/{id}/highlights` · `GET /api/templates` · `GET /api/ai/status` · `PUT|DELETE /api/ai/key`
 
 The server listens only on `127.0.0.1`, so it can't be reached from other machines.
