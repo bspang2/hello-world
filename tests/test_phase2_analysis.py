@@ -500,3 +500,20 @@ def test_cli_template_tuning(game_clip, settings, capsys):
     assert cli.main(["template-scores", str(rid), "--top", "5"]) == 0
     out = capsys.readouterr().out
     assert "0:08" in out and "0:30" in out and "0:34" in out and "MATCH" in out
+
+
+@pytest.mark.parametrize("video_delay", [0.0, 0.7])
+def test_analysis_frames_align_with_template_frames(tmp_path, video_delay):
+    """Frame labelled t in analysis == frame extracted at t (also when video starts late)."""
+    import subprocess
+    from rogue_sniper.analysis.decode import iter_frames
+    p = tmp_path / "frames.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+                    "-i", "nullsrc=s=320x180:r=60:d=12,geq=lum='mod(N\\,240)':cb=128:cr=128",
+                    "-f", "lavfi", "-i", "sine=d=13", "-map", "0:v", "-map", "1:a",
+                    "-vf", f"setpts=PTS+{video_delay}/TB", "-c:v", "libx264", "-qp", "0", "-preset", "ultrafast",
+                    "-c:a", "aac", str(p)], check=True)
+    frames = {round(t, 2): f for t, f in iter_frames(p, 4.0, (320, 180))}
+    for t in (1.0, 5.25, 10.5):
+        ref = extract_frame(p, t, size=(320, 180))
+        assert np.abs(frames[t].astype(int) - ref.astype(int)).mean() < 0.5, t

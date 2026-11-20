@@ -109,8 +109,10 @@ def _iter_frames(path, fps, size, ffmpeg, hwaccel, cancel):
     args = [ffmpeg, "-v", "error", "-nostdin"]
     if hwaccel and hwaccel != "none":
         args += ["-hwaccel", hwaccel]
-    args += ["-i", str(path), "-an", "-sn", "-dn", "-vf", f"fps={fps},scale={w}:{h}:flags=area",
+    args += ["-i", str(path), "-an", "-sn", "-dn", "-vf", f"fps={fps}:start_time=0:round=up,scale={w}:{h}:flags=area",
              "-pix_fmt", "bgr24", "-f", "rawvideo", "-"]
+    # start_time=0 + round=up: frame i is exactly the frame `extract_frame(i/fps)` returns, even
+    # when the video track starts after the audio (common in NVIDIA/OBS files). Templates depend on it.
     proc = _Proc(args)
     n = w * h * 3
     i = 0
