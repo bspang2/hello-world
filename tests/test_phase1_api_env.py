@@ -117,3 +117,11 @@ def test_cli_init_scan_list(tmp_path, capsys):
     assert "imported" in out and "shadowplay" in out
     assert cli.main(["env-check", "--json", "--no-encode-test"]) == 0
     assert "ffmpeg" in json.loads(capsys.readouterr().out)
+
+
+def test_detected_folders_prefer_game_subfolder(tmp_path, settings):
+    home = tmp_path / "home"
+    (home / "Videos" / "NVIDIA" / "Fortnite").mkdir(parents=True)
+    (home / "Videos" / "NVIDIA" / "Minecraft").mkdir(parents=True)
+    r = run_env_check(settings, home=home, appdata=tmp_path / "none", test_encoders=False)
+    assert detected_recording_folders(r) == [str(home / "Videos" / "NVIDIA" / "Fortnite")]

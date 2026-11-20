@@ -252,5 +252,10 @@ def format_report(r: dict) -> str:
 
 def detected_recording_folders(r: dict) -> list[str]:
     out = [f["path"] for f in r["recording"]["shadowplay_or_capture_folders"] if f["likely"] == "shadowplay"]
+    # If a game-specific folder (NVIDIA\Fortnite) exists, don't also monitor its parent
+    # (NVIDIA\), which would import recordings of other games.
+    norm = [os.path.normcase(os.path.abspath(p)) for p in out]
+    out = [p for p, n in zip(out, norm)
+           if not any(o != n and o.startswith(n.rstrip("\\/") + os.sep) for o in norm)]
     out += [p["folder"] for p in r["recording"]["obs_profiles"] if p.get("folder")]
     return list(dict.fromkeys(out))
