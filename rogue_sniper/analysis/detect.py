@@ -33,6 +33,7 @@ class Timeline:
     template_hits: list[tuple[float, str, str, float]] = field(default_factory=list)  # t, event, name, score
     templates_loaded: int = 0
     template_scores: dict[str, np.ndarray] = field(default_factory=dict)  # "event/name" -> per-frame score
+    template_thresholds: dict[str, float] = field(default_factory=dict)   # template name -> threshold
 
     def per_second(self) -> dict[str, np.ndarray]:
         n = max(1, int(np.ceil(self.duration)))
@@ -144,15 +145,18 @@ def detect_templates(tl: Timeline) -> list[Event]:
     by_event: dict[str, list[tuple[float, float, float]]] = {}
     gap = 1.5
     for t, ev, name, score in sorted(tl.template_hits):
+        # margin above this template's own threshold, 0..1 (thresholds differ per template)
+        thr = tl.template_thresholds.get(name, 0.75)
+        margin = min(1.0, max(0.0, (score - thr) / max(0.05, 1 - thr)))
         runs = by_event.setdefault(ev, [])
         if runs and t - runs[-1][1] <= gap:
-            s0, _, best = runs[-1]
-            runs[-1] = (s0, t, max(best, score))
+            s0, _, best, m = runs[-1]
+            runs[-1] = (s0, t, max(best, score), max(m, margin))
         else:
-            runs.append((t, t, score))
+            runs.append((t, t, score, margin))
     for ev, runs in by_event.items():
-        for s0, s1, best in runs:
-            conf = round(min(0.97, 0.6 + 0.37 * max(0.0, (best - 0.7) / 0.3)), 3)
+        for s0, s1, best, m in runs:
+            conf = round(min(0.97, 0.65 + 0.32 * m), 3)
             label = {"elimination": "Elimination", "knocked": "Knocked an enemy",
                      "victory_royale": "VICTORY ROYALE"}.get(ev, ev)
             events.append(Event(ev, s0, s0, s1, conf, f"{label} at {fmt_t(s0)} (HUD match {best:.2f})",
@@ -203,6 +207,8 @@ def primary_type(types: list[str]) -> str:
 
 
 MERGE_GAP = 4.0  # key moments closer than this become one clip
+FIGHT_GAP = 15.0  # knock -> finish / chained HUD events within this are one fight
+HUD_FIGHT = {"knocked", "elimination", "multi_elimination"}
 
 
 def _should_merge(cluster: list, sp: list, max_len: float) -> bool:
@@ -216,6 +222,10 @@ def _should_merge(cluster: list, sp: list, max_len: float) -> bool:
     key_end = max(e.end for e in cluster[2])
     key_start = min(e.start for e in sp[2])
     if key_start - key_end <= MERGE_GAP:
+        return True
+    # A knock and the finish (or chained knocks/elims) are one play -> one video.
+    if (any(e.type in HUD_FIGHT for e in cluster[2]) and any(e.type in HUD_FIGHT for e in sp[2])
+            and key_start - key_end <= FIGHT_GAP):
         return True
     inter = min(cluster[1], sp[1]) - max(cluster[0], sp[0])
     return inter > 0.5 * min(cluster[1] - cluster[0], sp[1] - sp[0])

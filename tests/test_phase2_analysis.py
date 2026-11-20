@@ -517,3 +517,22 @@ def test_analysis_frames_align_with_template_frames(tmp_path, video_delay):
     for t in (1.0, 5.25, 10.5):
         ref = extract_frame(p, t, size=(320, 180))
         assert np.abs(frames[t].astype(int) - ref.astype(int)).mean() < 0.5, t
+
+
+def test_knock_and_finish_are_one_clip_but_other_plays_are_not():
+    s = Settings()
+    evs = [Event("knocked", 62, 62, 62, 0.85, "knock"), Event("elimination", 74, 74, 74, 0.7, "elim"),
+           Event("knocked", 160, 160, 160, 0.85, "knock2"), Event("high_action_combat", 172, 170, 174, 0.7, "fight")]
+    hl = build_highlights(evs, 300, s)
+    assert len(hl) == 3
+    assert hl[0]["type"] == "elimination" and set(hl[0]["types"]) == {"knocked", "elimination"}
+    assert hl[0]["start"] < 62 and hl[0]["end"] > 74
+
+
+def test_template_confidence_relative_to_own_threshold():
+    tl = _tl([])
+    tl.template_hits = [(10.0, "elimination", "elim", 0.64), (50.0, "knocked", "knock", 0.90)]
+    tl.template_thresholds = {"elim": 0.62, "knock": 0.75}
+    ev = {e.type: e for e in __import__("rogue_sniper.analysis.detect", fromlist=["x"]).detect_templates(tl)}
+    assert 0.65 <= ev["elimination"].confidence < 0.7      # just over its (low) threshold
+    assert ev["knocked"].confidence > 0.8

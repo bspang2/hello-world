@@ -52,7 +52,8 @@ def build_timeline(path: Path, info: dict, s: Settings, progress: Progress, canc
         if i % 20 == 0:
             progress(0.2 + 0.6 * min(1.0, i / expected), f"scanning video {int(100 * min(1, i / expected))}%")
     return Timeline(duration, s.analysis_fps, np.array(times), np.array(motion), np.array(scope),
-                    audio, hits, len(matcher), {k: np.array(v) for k, v in tscores.items()})
+                    audio, hits, len(matcher), {k: np.array(v) for k, v in tscores.items()},
+                    {t.name: t.threshold for t, _, _ in matcher.items})
 
 
 def ai_review(path: Path, highlights: list[dict], s: Settings, progress: Progress, cancel=None,
