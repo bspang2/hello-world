@@ -30,7 +30,8 @@ them and upload to TikTok yourself.
    - creates `Videos\ROGUE SNIPER\` with `RAW GAMEPLAY`, `PROCESSING`, `READY TO POST`, `ARCHIVE`, `FAILED`
    - finds your ShadowPlay (`Videos\Fortnite`) and OBS recording folders and adds them to the monitor
    - runs the environment check, which test-encodes with every GPU encoder
-4. Double-click **`scripts\windows\start.bat`**. It starts the monitor and the API and opens http://127.0.0.1:8765.
+4. Double-click **`scripts\windows\start.bat`**.
+5. To update later, close `start.bat` and double-click **`scripts\windows\update.bat`**. It starts the monitor and the API and opens http://127.0.0.1:8765.
 
 ## Commands
 
@@ -115,6 +116,8 @@ python -m rogue_sniper highlight-edit <hid> --status rejected | --type clutch | 
 python -m rogue_sniper highlight-add <id> --start 5:02 --end 5:15 --type funny_failure
 python -m rogue_sniper snapshot <id> --time 3:20
 python -m rogue_sniper make-template <id> --time 3:20 --region x1,y1,x2,y2 --event elimination
+python -m rogue_sniper template-scores <id>          # best match moments per template (tuning)
+python -m rogue_sniper template-threshold <event> <name> 0.85
 python -m rogue_sniper set-api-key | ai-status
 ```
 Settings such as `sensitivity` (low/medium/high), `type_thresholds`, `max_highlights_per_recording`, `analysis_fps` and `ai_max_candidates` live in `settings.json`.

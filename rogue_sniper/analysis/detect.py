@@ -32,6 +32,7 @@ class Timeline:
     audio: AudioFeatures | None
     template_hits: list[tuple[float, str, str, float]] = field(default_factory=list)  # t, event, name, score
     templates_loaded: int = 0
+    template_scores: dict[str, np.ndarray] = field(default_factory=dict)  # "event/name" -> per-frame score
 
     def per_second(self) -> dict[str, np.ndarray]:
         n = max(1, int(np.ceil(self.duration)))

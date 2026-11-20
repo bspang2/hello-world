@@ -460,3 +460,43 @@ def test_db_upgrades_from_phase1(tmp_path):
     assert db.recordings_needing_analysis()[0]["filename"] == "a.mp4"
     assert db.list_recordings()[0]["highlight_count"] == 0
     db.close()
+
+
+# ---- tuning fixes from first real-footage run -------------------------------
+def test_template_self_match_is_exact(game_clip, settings):
+    """Template pixels must come from the same scaler as analysis frames."""
+    elim_template(game_clip, settings)
+    tl = build_timeline(game_clip, probe(game_clip).as_dict(), settings, lambda f, s: None)
+    series = next(iter(tl.template_scores.values()))
+    i = int(np.argmin(np.abs(tl.times - 30.5)))
+    assert series[i] > 0.99
+
+
+def test_overlapping_templates_keep_only_best(game_clip, settings):
+    """KNOCKED! and ELIMINATION! share a screen spot: one frame can't be both."""
+    elim_template(game_clip, settings)
+    make_template(game_clip, 30.5, (POPUP_BOX[0] + 10, POPUP_BOX[1], POPUP_BOX[2], POPUP_BOX[3]),
+                  1280, 720, "knocked", settings.analysis_width, threshold=0.3)
+    tl = build_timeline(game_clip, probe(game_clip).as_dict(), settings, lambda f, s: None)
+    per_frame = {}
+    for t, ev, name, sc in tl.template_hits:
+        per_frame.setdefault(t, []).append(ev)
+    assert per_frame and all(len(v) == 1 for v in per_frame.values())
+
+
+def test_cli_template_tuning(game_clip, settings, capsys):
+    from rogue_sniper.config import db_path, save_settings
+    save_settings(settings)
+    db = Database(db_path())
+    rid = import_clip(db, settings, game_clip)
+    db.close()
+    elim_template(game_clip, settings)
+    name = list_templates()[0]["name"]
+    assert cli.main(["template-threshold", "elimination", name, "0.9"]) == 0
+    assert list_templates()[0]["threshold"] == 0.9
+    assert cli.main(["template-threshold", "elimination", name, "1.5"]) == 1
+    assert cli.main(["analyze", str(rid), "--no-ai"]) == 0
+    capsys.readouterr()
+    assert cli.main(["template-scores", str(rid), "--top", "5"]) == 0
+    out = capsys.readouterr().out
+    assert "0:08" in out and "0:30" in out and "0:34" in out and "MATCH" in out

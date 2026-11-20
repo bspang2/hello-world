@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 from ..config import app_home, unique_path
-from .decode import extract_frame
+from .decode import analysis_size, extract_frame
 from .visual import Template
 
 EVENTS = ("elimination", "knocked", "victory_royale", "custom")
@@ -69,7 +69,8 @@ def make_template(recording: Path | str, t: float, region_px: tuple[int, int, in
     if not (0 <= x1 < x2 <= src_w and 0 <= y1 < y2 <= src_h):
         raise ValueError(f"region must be inside the {src_w}x{src_h} frame")
     rel = (x1 / src_w, y1 / src_h, x2 / src_w, y2 / src_h)
-    frame = extract_frame(recording, t, width=analysis_width, ffmpeg=ffmpeg)
+    # Same size + scaler as the analysis frames, so the template matches pixel-for-pixel.
+    frame = extract_frame(recording, t, ffmpeg=ffmpeg, size=analysis_size(src_w, src_h, analysis_width))
     g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     h, w = g.shape
     crop = g[int(rel[1] * h):int(np.ceil(rel[3] * h)), int(rel[0] * w):int(np.ceil(rel[2] * w))]
@@ -86,3 +87,15 @@ def make_template(recording: Path | str, t: float, region_px: tuple[int, int, in
         "event": event, "region": rel, "frame_width": w, "threshold": threshold,
         "source": str(recording), "time": t}, indent=2), encoding="utf-8")
     return png
+
+
+def set_threshold(event: str, name: str, threshold: float) -> bool:
+    if not 0.3 <= threshold <= 0.99:
+        raise ValueError("threshold must be between 0.3 and 0.99")
+    meta_path = templates_dir() / event / f"{name}.json"
+    if not meta_path.exists():
+        return False
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["threshold"] = threshold
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return True

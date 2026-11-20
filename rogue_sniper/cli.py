@@ -78,6 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--name")
     p.add_argument("--threshold", type=float, default=0.75)
     sub.add_parser("templates", help="list HUD templates")
+    p = sub.add_parser("template-scores", help="show the best-matching moments per template (for tuning)")
+    p.add_argument("id", type=int)
+    p.add_argument("--top", type=int, default=15)
+    p = sub.add_parser("template-threshold", help="change a template's match threshold")
+    p.add_argument("event")
+    p.add_argument("name")
+    p.add_argument("threshold", type=float)
     sub.add_parser("set-api-key", help="store your Anthropic API key in Windows Credential Manager")
     sub.add_parser("ai-status", help="show whether an API key is configured")
 
@@ -256,6 +263,42 @@ def main(argv: list[str] | None = None) -> int:
         for t in list_templates():
             print(f"{t['event']:<15} {t['name']:<20} threshold {t['threshold']}  size {t['size']}")
         return 0
+
+    if a.cmd == "template-scores":
+        import json as _json
+        from .analysis.detect import fmt_t
+        from .analysis.templates import list_templates
+        dump = app_home() / "analysis" / f"recording_{a.id}.json"
+        if not dump.exists():
+            print(f"run `analyze {a.id}` first", file=sys.stderr)
+            return 1
+        scores = _json.loads(dump.read_text(encoding="utf-8")).get("template_scores", {})
+        thr = {f"{t['event']}/{t['name']}": t["threshold"] for t in list_templates()}
+        if not scores:
+            print("no template scores in the last analysis - re-run analyze")
+        for key, series in scores.items():
+            print(f"\n{key}  (threshold {thr.get(key, '?')})")
+            peaks, used = [], []
+            for t, v in sorted(series, key=lambda x: -x[1]):
+                if all(abs(t - u) > 3 for u in used):
+                    used.append(t)
+                    peaks.append((t, v))
+                if len(peaks) >= a.top:
+                    break
+            for t, v in sorted(peaks):
+                mark = "MATCH" if v >= thr.get(key, 1) else ""
+                print(f"  {fmt_t(t):>6}  {v:.2f}  {mark}")
+        return 0
+
+    if a.cmd == "template-threshold":
+        from .analysis.templates import set_threshold
+        try:
+            ok = set_threshold(a.event, a.name, a.threshold)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        print("updated" if ok else "template not found (see `templates`)")
+        return 0 if ok else 1
 
     if a.cmd == "set-api-key":
         import getpass

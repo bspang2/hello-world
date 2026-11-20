@@ -132,9 +132,16 @@ def _iter_frames(path, fps, size, ffmpeg, hwaccel, cancel):
         raise e
 
 
-def extract_frame(path: Path | str, t: float, width: int | None = None, ffmpeg: str = "ffmpeg") -> np.ndarray:
-    """One BGR frame at time `t` (full resolution unless `width` is given)."""
-    vf = ["-vf", f"scale={width}:-2"] if width else []
+def extract_frame(path: Path | str, t: float, width: int | None = None, ffmpeg: str = "ffmpeg",
+                  size: tuple[int, int] | None = None) -> np.ndarray:
+    """One BGR frame at time `t` (full resolution unless `width` or exact `size` is given).
+
+    Pass `size` to get pixels identical to what `iter_frames` produces (same scaler).
+    """
+    if size:
+        vf = ["-vf", f"scale={size[0]}:{size[1]}:flags=area"]
+    else:
+        vf = ["-vf", f"scale={width}:-2"] if width else []
     cp = subprocess.run([ffmpeg, "-v", "error", "-nostdin", "-ss", f"{max(0.0, t):.3f}", "-i", str(path),
                          "-frames:v", "1", *vf, "-f", "image2pipe", "-vcodec", "png", "-"],
                         capture_output=True, creationflags=CREATE_NO_WINDOW, timeout=60)

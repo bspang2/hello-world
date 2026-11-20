@@ -16,7 +16,7 @@ from .audio import SR, analyze_audio
 from .decode import Cancelled, analysis_size, extract_jpeg, iter_frames, read_audio
 from .detect import Timeline, apply_status, build_highlights, detect_events, primary_type
 from .templates import load_templates
-from .visual import MotionMeter, TemplateMatcher, scope_score
+from .visual import MotionMeter, TemplateMatcher, best_per_region, scope_score
 
 log = logging.getLogger(__name__)
 Progress = Callable[[float, str], None]
@@ -36,6 +36,7 @@ def build_timeline(path: Path, info: dict, s: Settings, progress: Progress, canc
     matcher = TemplateMatcher(load_templates(), *size)
     motion_m = MotionMeter()
     times, motion, scope, hits = [], [], [], []
+    tscores: dict[str, list[float]] = {}
     expected = max(1, int(duration * s.analysis_fps))
     for i, (t, frame) in enumerate(iter_frames(path, s.analysis_fps, size, s.ffmpeg_path,
                                                 s.analysis_hwaccel, cancel)):
@@ -43,13 +44,15 @@ def build_timeline(path: Path, info: dict, s: Settings, progress: Progress, canc
         times.append(t)
         motion.append(motion_m(gray))
         scope.append(scope_score(gray))
-        for tpl, score in matcher.match(gray):
-            if score >= tpl.threshold:
-                hits.append((t, tpl.event, tpl.name, score))
+        scored = matcher.match(gray)
+        for tpl, score in scored:
+            tscores.setdefault(f"{tpl.event}/{tpl.name}", []).append(score)
+        for tpl, score in best_per_region(scored):
+            hits.append((t, tpl.event, tpl.name, score))
         if i % 20 == 0:
             progress(0.2 + 0.6 * min(1.0, i / expected), f"scanning video {int(100 * min(1, i / expected))}%")
     return Timeline(duration, s.analysis_fps, np.array(times), np.array(motion), np.array(scope),
-                    audio, hits, len(matcher))
+                    audio, hits, len(matcher), {k: np.array(v) for k, v in tscores.items()})
 
 
 def ai_review(path: Path, highlights: list[dict], s: Settings, progress: Progress, cancel=None,
@@ -138,6 +141,8 @@ def _export(rec_id: int, tl: Timeline, events, highlights, summary) -> None:
             "summary": summary,
             "per_second": {k: [round(float(x), 3) for x in v] for k, v in {**ps, "scope": scope_ps}.items()},
             "template_hits": [[round(t, 2), e, n, round(sc, 3)] for t, e, n, sc in tl.template_hits],
+            "template_scores": {k: [[round(float(t), 2), round(float(v), 3)] for t, v in zip(tl.times, arr)]
+                                for k, arr in tl.template_scores.items()},
             "events": [asdict(e) for e in events],
             "highlights": highlights,
         }

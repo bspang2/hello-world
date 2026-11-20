@@ -81,3 +81,18 @@ class TemplateMatcher:
             score = float(np.nan_to_num(res.max(), nan=0.0))
             out.append((t, score))
         return out
+
+
+def _overlaps(a: tuple, b: tuple) -> bool:
+    return min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1])
+
+
+def best_per_region(scored: list[tuple[Template, float]]) -> list[tuple[Template, float]]:
+    """Of templates passing their threshold in overlapping screen areas (e.g. KNOCKED! and
+    ELIMINATION! share one spot), keep only the best-scoring one."""
+    passing = sorted(((t, s) for t, s in scored if s >= t.threshold), key=lambda x: -x[1])
+    kept: list[tuple[Template, float]] = []
+    for t, s in passing:
+        if not any(_overlaps(t.region, k.region) for k, _ in kept):
+            kept.append((t, s))
+    return kept
