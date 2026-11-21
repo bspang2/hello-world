@@ -35,7 +35,14 @@ class MonitorService:
         def analyze(job, progress, cancel):
             return analyze_recording(self.settings, self.db, job["recording_id"], progress, cancel)
 
-        return JobRunner(self.db, {"analyze": analyze}, lambda: self.settings)
+        def pause_reason():
+            from .gamecheck import game_running
+            s = self.settings
+            if s.pause_while_gaming and game_running(s.game_processes):
+                return "game running - resumes when you close it"
+            return None
+
+        return JobRunner(self.db, {"analyze": analyze}, lambda: self.settings, should_pause=pause_reason)
 
     def apply_settings(self, settings: Settings) -> None:
         with self._scan_lock:
@@ -107,6 +114,7 @@ class MonitorService:
             "last_error": self.last_error,
             "pending_files": self.watcher.pending_count,
             "jobs_running": self.jobs.running,
+            "jobs_paused": getattr(self.jobs, "paused_reason", None),
             "monitored_folders": [str(p) for p in self.settings.monitored_folders()],
         }
 

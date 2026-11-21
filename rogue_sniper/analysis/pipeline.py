@@ -29,7 +29,7 @@ def build_timeline(path: Path, info: dict, s: Settings, progress: Progress, canc
         progress(0.02, "reading audio")
         samples = read_audio(path, s.ffmpeg_path, SR, cancel)
         progress(0.15, "finding gunshots and impacts")
-        audio = analyze_audio(samples)
+        audio = analyze_audio(samples, k=s.audio_sensitivity_k)
         del samples
 
     size = analysis_size(int(info.get("width") or 1920), int(info.get("height") or 1080), s.analysis_width)

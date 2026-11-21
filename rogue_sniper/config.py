@@ -66,6 +66,11 @@ class Settings(BaseModel):
     scope_threshold: float = Field(default=0.5, ge=0.05, le=1.0)
     combat_min_shots: dict[str, int] = Field(default_factory=lambda: {"low": 8, "medium": 6, "high": 4})
 
+    audio_sensitivity_k: float = Field(default=6.0, ge=1.5, le=12.0)  # lower = hears more transients
+    # Don't analyse while you play (keeps FPS up); resumes when the game closes.
+    pause_while_gaming: bool = True
+    game_processes: list[str] = Field(default_factory=lambda: ["FortniteClient-Win64-Shipping.exe"])
+
     # ---- Phase 2: optional cloud AI review (Claude) --------------------
     ai_enabled: bool = False
     ai_model: str = "claude-opus-5-5"

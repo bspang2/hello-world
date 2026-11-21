@@ -536,3 +536,56 @@ def test_template_confidence_relative_to_own_threshold():
     ev = {e.type: e for e in __import__("rogue_sniper.analysis.detect", fromlist=["x"]).detect_templates(tl)}
     assert 0.65 <= ev["elimination"].confidence < 0.7      # just over its (low) threshold
     assert ev["knocked"].confidence > 0.8
+
+
+def test_jobs_pause_while_game_runs(settings, db):
+    rid = db.insert_waiting("x.mp4", "x.mp4", 1, 1, "obs")
+    state = {"game": True}
+    ran = []
+    r = JobRunner(db, {"analyze": lambda j, p, c: ran.append(1)}, lambda: settings, poll=0.05,
+                  should_pause=lambda: "game running" if state["game"] else None)
+    jid = r.enqueue(rid)
+    r.start()
+    try:
+        time.sleep(0.4)
+        assert not ran and db.get_job(jid)["status"] == "queued" and r.paused_reason == "game running"
+        state["game"] = False
+        r._wake.set()
+        for _ in range(200):
+            if db.get_job(jid)["status"] == "done":
+                break
+            time.sleep(0.05)
+        assert ran and db.get_job(jid)["status"] == "done"
+    finally:
+        r.stop()
+
+
+def test_job_pauses_mid_run(settings, db):
+    rid = db.insert_waiting("x.mp4", "x.mp4", 1, 1, "obs")
+    state = {"game": False}
+    seen = []
+
+    def work(job, progress, cancel):
+        progress(0.1, "a")
+        state["game"] = True
+        threading.Timer(0.3, lambda: state.update(game=False)).start()
+        t0 = time.monotonic()
+        progress(0.5, "b")              # blocks while paused
+        seen.append(time.monotonic() - t0)
+
+    r = JobRunner(db, {"analyze": work}, lambda: settings, should_pause=lambda: "game" if state["game"] else None)
+    r.poll = 0.05
+    jid = r.enqueue(rid)
+    r.run_pending_once()
+    assert seen and 0.25 <= seen[0] < 2 and db.get_job(jid)["status"] == "done"
+
+
+def test_audio_probe_cli(game_clip, settings, capsys):
+    from rogue_sniper.config import db_path, save_settings
+    save_settings(settings)
+    db = Database(db_path())
+    rid = import_clip(db, settings, game_clip)
+    db.close()
+    assert cli.main(["audio-probe", str(rid), "--fights", "0:42,0:21"]) == 0
+    out = capsys.readouterr().out
+    assert "match med/p90" in out and "[" in out

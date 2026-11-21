@@ -18,13 +18,16 @@ Handler = Callable[[dict, Callable[[float, str], None], threading.Event], dict |
 
 class JobRunner:
     def __init__(self, db: Database, handlers: dict[str, Handler], settings_getter: Callable[[], Settings],
-                 max_attempts: int = 3, poll: float = 1.0, retry_delay: float = 30.0):
+                 max_attempts: int = 3, poll: float = 1.0, retry_delay: float = 30.0,
+                 should_pause: Callable[[], str | None] | None = None):
         self.db = db
         self.handlers = handlers
         self.settings = settings_getter
         self.max_attempts = max_attempts
         self.poll = poll
         self.retry_delay = retry_delay
+        self.should_pause = should_pause or (lambda: None)  # returns a reason string while paused
+        self.paused_reason: str | None = None
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
@@ -86,6 +89,11 @@ class JobRunner:
     def _loop(self) -> None:
         while not self._stop.is_set():
             try:
+                self.paused_reason = self.should_pause()
+                if self.paused_reason:
+                    self._wake.wait(max(self.poll, 5.0))
+                    self._wake.clear()
+                    continue
                 if self.run_pending_once():
                     continue
             except Exception:
@@ -101,6 +109,15 @@ class JobRunner:
         last = [0.0, None]
 
         def progress(frac: float, stage: str) -> None:
+            # Pause mid-job (e.g. you started Fortnite): block here; FFmpeg waits on its pipe.
+            while not cancel.is_set() and not self._stop.is_set():
+                reason = self.should_pause()
+                self.paused_reason = reason
+                if not reason:
+                    break
+                self.db.update_job(job["id"], stage=f"paused: {reason}")
+                last[1] = None
+                cancel.wait(min(5.0, max(self.poll, 0.05)))
             now = time.monotonic()
             if stage != last[1] or now - last[0] > 0.5 or frac >= 1:
                 self.db.update_job(job["id"], progress=round(float(frac), 3), stage=stage)

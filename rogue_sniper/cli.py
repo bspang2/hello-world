@@ -78,6 +78,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--name")
     p.add_argument("--threshold", type=float, default=0.75)
     sub.add_parser("templates", help="list HUD templates")
+    p = sub.add_parser("audio-probe", help="tuning: gunshot detector at several sensitivities around known fights")
+    p.add_argument("id", type=int)
+    p.add_argument("--fights", required=True, help="comma-separated m:ss of moments you were shooting")
     p = sub.add_parser("template-scores", help="show the best-matching moments per template (for tuning)")
     p.add_argument("id", type=int)
     p.add_argument("--top", type=int, default=15)
@@ -256,6 +259,29 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {e}", file=sys.stderr)
             return 1
         print(f"Template saved: {out}\nRe-run `analyze` on your recordings to use it.")
+        return 0
+
+    if a.cmd == "audio-probe":
+        import numpy as np
+        from .analysis.audio import analyze_audio
+        from .analysis.decode import read_audio
+        rec = db.get_recording(a.id)
+        if not rec or not rec["audio_codec"]:
+            print("recording not found or has no audio", file=sys.stderr)
+            return 1
+        fights = [parse_time(x) for x in a.fights.split(",") if x.strip()]
+        print("Reading audio...")
+        x = read_audio(rec["library_path"] or rec["path"], settings.ffmpeg_path)
+        dur = len(x) / 16000
+        bins = np.arange(0, dur + 10, 10)
+        print(f"\nSounds counted in 10 s. 'match' = typical 10 s of this match (median / 90th percentile);"
+              f" fights = 10 s ending 2 s after each time you gave. Current setting k={settings.audio_sensitivity_k}")
+        print(f"{'k':>5} {'total':>6} {'match med/p90':>14}   fights")
+        for k in (2.5, 3.0, 3.5, 4.0, 5.0, 6.0):
+            t = analyze_audio(x, k=k).transient_times
+            per10 = np.histogram(t, bins)[0]
+            fc = [int(((t >= f - 8) & (t < f + 2)).sum()) for f in fights]
+            print(f"{k:>5} {len(t):>6} {np.median(per10):>7.0f} / {np.percentile(per10, 90):<5.0f}   {fc}")
         return 0
 
     if a.cmd == "templates":

@@ -74,7 +74,7 @@ A recording is imported only when all of these are true:
 
 ## Highlight detection (Phase 2)
 
-Every imported recording is analysed automatically in the background. You can watch progress on the status page.
+Every imported recording is analysed automatically in the background. You can watch progress on the status page. While Fortnite is running, analysis **pauses** so it doesn't cost you FPS, and it resumes when you close the game (`pause_while_gaming` in settings).
 
 | Signal | How it's detected | Reliability |
 |---|---|---|
@@ -117,6 +117,7 @@ python -m rogue_sniper highlight-add <id> --start 5:02 --end 5:15 --type funny_f
 python -m rogue_sniper snapshot <id> --time 3:20
 python -m rogue_sniper make-template <id> --time 3:20 --region x1,y1,x2,y2 --event elimination
 python -m rogue_sniper template-scores <id>          # best match moments per template (tuning)
+python -m rogue_sniper audio-probe <id> --fights 1:02,3:33   # gunshot detector at several sensitivities
 python -m rogue_sniper template-threshold <event> <name> 0.85
 python -m rogue_sniper set-api-key | ai-status
 ```
